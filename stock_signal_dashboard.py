@@ -6,25 +6,9 @@ from ta.trend import MACD
 from ta.volatility import BollingerBands
 import plotly.graph_objects as go
 import time
-import requests
-import smtplib
-from email.mime.text import MIMEText
-from dotenv import load_dotenv
-import os
 
-# Load environment variables
-load_dotenv()
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-EMAIL_SENDER = os.getenv("EMAIL_SENDER")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
-EMAIL_RECEIVER = os.getenv("EMAIL_RECEIVER")
-
-# Validate environment variables
-if not all([TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]):
-    st.error("Telegram credentials are missing. Please set TELEGRAM_TOKEN and TELEGRAM_CHAT_ID in Streamlit secrets.")
-if not all([EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_RECEIVER]):
-    st.warning("Email credentials are incomplete. Email notifications will be disabled.")
+# Set page config as the first Streamlit command
+st.set_page_config(page_title="Stock Signal Dashboard", layout="wide")
 
 # Cache stock data to reduce API calls
 @st.cache_data(ttl=300)
@@ -47,32 +31,6 @@ def get_stock_data(symbol, period="1d", interval="5m"):
     except Exception as e:
         st.error(f"Error fetching data for {symbol}: {str(e)}")
         return pd.DataFrame()
-
-def send_telegram_message(message):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        return
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
-    try:
-        response = requests.post(url, data=payload, timeout=5)
-        response.raise_for_status()
-    except Exception as e:
-        st.warning(f"Failed to send Telegram message: {str(e)}")
-
-def send_email_notification(message):
-    if not all([EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_RECEIVER]):
-        return
-    try:
-        msg = MIMEText(message)
-        msg['Subject'] = f"Stock Signal Alert for {symbol.upper()}"
-        msg['From'] = EMAIL_SENDER
-        msg['To'] = EMAIL_RECEIVER
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-            server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-            server.sendmail(EMAIL_SENDER, EMAIL_RECEIVER, msg.as_string())
-        st.success("Email notification sent!")
-    except Exception as e:
-        st.warning(f"Failed to send email: {str(e)}")
 
 def compute_signals(df, rsi_period=14, macd_fast=12, macd_slow=26, macd_signal=9):
     if "Close" not in df.columns or df["Close"].isna().all():
@@ -111,10 +69,6 @@ def plot_stock_data(data, symbol):
     )
     st.plotly_chart(fig, use_container_width=True)
 
-# Streamlit configuration
-st.set_page_config(page_title="Stock Signal Dashboard", layout="wide")
-st.title("📈 Live Stock Signal Dashboard")
-
 # Initialize session state
 if "theme" not in st.session_state:
     st.session_state.theme = "Light"
@@ -128,11 +82,11 @@ with st.sidebar:
     macd_fast = st.slider("MACD Fast Period:", 5, 50, 12)
     macd_slow = st.slider("MACD Slow Period:", 10, 100, 26)
     macd_signal = st.slider("MACD Signal Period:", 5, 50, 9)
-    enable_email = st.checkbox("Enable Email Notifications", value=False)
     theme = st.selectbox("Theme", ["Light", "Dark"], index=0 if st.session_state.theme == "Light" else 1)
     st.session_state.theme = theme
 
 # Main dashboard
+st.title("📈 Live Stock Signal Dashboard")
 placeholder = st.empty()
 
 while True:
@@ -153,14 +107,8 @@ while True:
                 plot_stock_data(data, symbol)
                 if latest["Buy_Signal"]:
                     st.success("✅ Buy Signal Detected!")
-                    send_telegram_message(f"📈 Buy Signal for {symbol} at {latest['Close']:.2f}")
-                    if enable_email:
-                        send_email_notification(f"Buy Signal for {symbol} at {latest['Close']:.2f}")
                 elif latest["Sell_Signal"]:
                     st.error("🔻 Sell Signal Detected!")
-                    send_telegram_message(f"📉 Sell Signal for {symbol} at {latest['Close']:.2f}")
-                    if enable_email:
-                        send_email_notification(f"Sell Signal for {symbol} at {latest['Close']:.2f}")
                 else:
                     st.info("🔍 No strong signal currently.")
                 with st.expander("📊 Recent Data"):
